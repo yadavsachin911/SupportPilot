@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ticket.created",
+  "type": "object",
+  "required": ["ticket_id", "customer_id", "subject", "body"],
+  "properties": {
+    "ticket_id": {"type": "string"},
+    "customer_id": {"type": "string"},
+    "customer_email": {"type": ["string", "null"]},
+    "subject": {"type": "string", "maxLength": 200},
+    "body": {"type": "string", "maxLength": 5000}
+  }
+}

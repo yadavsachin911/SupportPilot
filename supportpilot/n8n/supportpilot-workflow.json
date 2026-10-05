@@ -1,0 +1,507 @@
+{
+  "name": "SupportPilot: route triaged tickets",
+  "nodes": [
+    {
+      "parameters": {
+        "topic": "ticket.triaged",
+        "groupId": "n8n-supportpilot",
+        "useSchemaRegistry": false,
+        "options": {
+          "jsonParseMessage": true,
+          "onlyMessage": true
+        }
+      },
+      "id": "c2bdcf91-280c-4526-b0f2-0e2242a0163d",
+      "name": "Kafka Trigger",
+      "type": "n8n-nodes-base.kafkaTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        300
+      ],
+      "credentials": {
+        "kafka": {
+          "id": "",
+          "name": "Kafka (Redpanda / MSK)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const t = $json;\nlet route = 'human';\nif (t.confidence < 0.6) route = 'human';\nelse if (t.needs_refund) route = 'refund';\nelse if (t.priority === 'high') route = 'urgent';\nelse if (t.priority === 'low' && t.confidence > 0.85 && t.customer_email) route = 'auto_reply';\nreturn { json: { ...t, route } };"
+      },
+      "id": "7d285fe4-00db-47be-be9d-ade40fd3bacb",
+      "name": "Decide route",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "1e0ba85d-48dd-42fb-b1c3-e6109fa9f789",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "urgent",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "urgent"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "254cf244-7346-4bd5-8297-f0545000e683",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "refund",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "refund"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "097654e9-1f8e-4d92-b4a3-52ac450d70b0",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "auto_reply",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "auto_reply"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "33938f06-8ddc-4291-b4d4-79aec2368e36",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "human",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "human"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6fb13a6d-7da2-47a4-bec7-3409a3eb64a2",
+      "name": "Route",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: `:rotating_light: *URGENT* ticket ${$('Decide route').item.json.ticket_id}\\n${$('Decide route').item.json.subject}\\n${$('Decide route').item.json.body}` }) }}",
+        "options": {}
+      },
+      "id": "8543bb2d-6d6e-48ef-bebe-b2030ef2fb7e",
+      "name": "Slack: urgent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.API_BASE_URL }}/tickets/{{ $('Decide route').item.json.ticket_id }}",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"escalated\"}",
+        "options": {}
+      },
+      "id": "7c660d17-33ba-4b2e-9e03-993167fe9087",
+      "name": "Mark escalated",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.API_BASE_URL }}/tickets/{{ $('Decide route').item.json.ticket_id }}",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"awaiting_approval\"}",
+        "options": {}
+      },
+      "id": "450ffb0b-4e57-4aa2-9aae-aa898a7878ef",
+      "name": "Mark awaiting approval",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: `*Refund approval* ticket ${$('Decide route').item.json.ticket_id}\\n${$('Decide route').item.json.subject}\\nApprove: ${$execution.resumeUrl}?decision=approve\\nReject: ${$execution.resumeUrl}?decision=reject` }) }}",
+        "options": {}
+      },
+      "id": "8c6e98b3-50ca-4c5e-ab8f-99be47f7b376",
+      "name": "Slack: approval request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        200
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "resume": "webhook",
+        "httpMethod": "GET",
+        "options": {}
+      },
+      "id": "86e51e75-f6a2-4ff0-9d0e-44fbc31af0e8",
+      "name": "Wait for decision",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1240,
+        200
+      ],
+      "webhookId": "6126d758-68b1-47dc-bd73-c202a279de4d"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "04c93f94-fa8c-42f9-a888-5778caed0cf2",
+              "leftValue": "={{ $json.query.decision }}",
+              "rightValue": "approve",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f691a55e-bc23-49c9-a2e1-786069095ba1",
+      "name": "Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1480,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.API_BASE_URL }}/tickets/{{ $('Decide route').item.json.ticket_id }}/refund",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {}
+      },
+      "id": "578de2ab-9ffe-4205-98c3-96b9b22639da",
+      "name": "Issue refund",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1720,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.API_BASE_URL }}/tickets/{{ $('Decide route').item.json.ticket_id }}",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"refund_rejected\"}",
+        "options": {}
+      },
+      "id": "12b482b0-7cab-4cac-bb10-763bb4a04905",
+      "name": "Mark refund rejected",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1720,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.API_BASE_URL }}/outbox/email",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ to: $('Decide route').item.json.customer_email, subject: 'Re: ' + $('Decide route').item.json.subject, body: $('Decide route').item.json.draft_reply }) }}",
+        "options": {}
+      },
+      "id": "8410818f-4dc8-4ecd-b275-4f0026494165",
+      "name": "Send reply (swap for SES)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.API_BASE_URL }}/tickets/{{ $('Decide route').item.json.ticket_id }}",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"auto_replied\"}",
+        "options": {}
+      },
+      "id": "ceba87ab-e728-44c4-8636-1b71f487b8f9",
+      "name": "Mark auto replied",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.API_BASE_URL }}/tickets/{{ $('Decide route').item.json.ticket_id }}",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"human_queue\"}",
+        "options": {}
+      },
+      "id": "2ba687bb-2fd6-4f4f-b1f6-96a42a4d4cb6",
+      "name": "Mark human queue",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        620
+      ]
+    }
+  ],
+  "connections": {
+    "Kafka Trigger": {
+      "main": [
+        [
+          {
+            "node": "Decide route",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide route": {
+      "main": [
+        [
+          {
+            "node": "Route",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route": {
+      "main": [
+        [
+          {
+            "node": "Slack: urgent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark awaiting approval",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send reply (swap for SES)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark human queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack: urgent": {
+      "main": [
+        [
+          {
+            "node": "Mark escalated",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark awaiting approval": {
+      "main": [
+        [
+          {
+            "node": "Slack: approval request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack: approval request": {
+      "main": [
+        [
+          {
+            "node": "Wait for decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for decision": {
+      "main": [
+        [
+          {
+            "node": "Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approved?": {
+      "main": [
+        [
+          {
+            "node": "Issue refund",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark refund rejected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send reply (swap for SES)": {
+      "main": [
+        [
+          {
+            "node": "Mark auto replied",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}

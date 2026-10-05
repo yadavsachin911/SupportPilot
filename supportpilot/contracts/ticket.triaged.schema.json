@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ticket.triaged",
+  "type": "object",
+  "required": ["ticket_id", "customer_id", "subject", "body", "category", "priority", "needs_refund", "draft_reply", "confidence"],
+  "properties": {
+    "ticket_id": {"type": "string"},
+    "customer_id": {"type": "string"},
+    "customer_email": {"type": ["string", "null"]},
+    "subject": {"type": "string"},
+    "body": {"type": "string"},
+    "category": {"enum": ["order_status", "refund", "billing", "technical", "other"]},
+    "priority": {"enum": ["low", "medium", "high"]},
+    "needs_refund": {"type": "boolean"},
+    "draft_reply": {"type": "string"},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+  }
+}

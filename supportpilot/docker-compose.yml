@@ -1,0 +1,67 @@
+# Local stack: Redpanda (Kafka API) + REST API + AI agent + n8n.  Run: docker compose up --build
+services:
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.2.7
+    command:
+      - redpanda start
+      - --smp=1
+      - --memory=512M
+      - --overprovisioned
+      - --node-id=0
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr=internal://redpanda:9092,external://localhost:19092
+    ports: ["19092:19092"]
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  topics:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.2.7
+    depends_on:
+      redpanda: { condition: service_healthy }
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - rpk topic create ticket.created ticket.triaged ticket.created.dlq -p 3 -X brokers=redpanda:9092 || true
+    restart: "no"
+
+  api:
+    build: ./api
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+      DB_PATH: /data/supportpilot.db
+    volumes: ["api-data:/data"]
+    ports: ["8000:8000"]
+    depends_on:
+      topics: { condition: service_completed_successfully }
+
+  agent:
+    build: ./agent
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+      INTERNAL_API_URL: http://api:8000
+      MOCK_LLM: ${MOCK_LLM:-true}          # set to false and add ANTHROPIC_API_KEY for the real model
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AGENT_MODEL: ${AGENT_MODEL:-claude-sonnet-5}
+    depends_on:
+      topics: { condition: service_completed_successfully }
+      api: { condition: service_started }
+    restart: unless-stopped
+
+  n8n:
+    image: n8nio/n8n:latest
+    ports: ["5678:5678"]
+    environment:
+      GENERIC_TIMEZONE: Asia/Kolkata
+      WEBHOOK_URL: http://localhost:5678/
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"   # lets workflows read $env.API_BASE_URL etc.
+      API_BASE_URL: http://api:8000
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+    volumes: ["n8n-data:/home/node/.n8n"]
+    depends_on:
+      topics: { condition: service_completed_successfully }
+
+volumes:
+  api-data:
+  n8n-data:

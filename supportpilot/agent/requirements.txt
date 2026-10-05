@@ -1,0 +1,5 @@
+anthropic>=0.40
+requests>=2.32
+pydantic>=2.7
+confluent-kafka>=2.5
+aws-msk-iam-sasl-signer-python>=1.0
