@@ -1,0 +1,12 @@
+---
+description: SupportPilot conventions
+alwaysApply: true
+---
+- Python 3.12, FastAPI, Pydantic v2, type hints everywhere.
+- The LLM is NEVER called inside an HTTP request handler; publish a Kafka event instead.
+- Kafka consumers: manual commits, idempotent processing, DLQ after N failures.
+- Agent tools are read-only. Anything that changes money or data goes through human approval in n8n.
+- Never hardcode secrets; read env vars. Secrets live in AWS Secrets Manager.
+- Every new endpoint or agent behavior needs a pytest test (mock the LLM and HTTP tools).
+- Event shapes live in /contracts. Change the schema first, then the code.
+- Log `ticket_id` on every line touching a ticket.
